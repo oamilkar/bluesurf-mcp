@@ -18,9 +18,28 @@ En este monorepo, modo editable:
 pip install -e ./bluesurf-mcp
 ```
 
+## Guardar credenciales (`login` / `logout`)
+
+La contraseña no tiene que ir en `mcp.json`. Una vez, en una terminal:
+
+```bash
+bluesurf-mcp login
+```
+
+Pide usuario y contraseña, valida contra BlueSurf y guarda la contraseña en el
+almacén del sistema (Credential Manager en Windows, Keychain en macOS, Secret
+Service en Linux). El username queda en un JSON local, sin la contraseña.
+
+```bash
+bluesurf-mcp logout
+```
+
+borra lo guardado.
+
 ## Configuración (variables de entorno)
 
-El consumidor entrega credenciales o cookie; la librería no persiste nada.
+El entorno **gana** sobre lo guardado con `login`. Útil para CI o para
+sobrescribir sin tocar el almacén.
 
 Claves canónicas `BLUESURF_*`; se aceptan `SURF_*` como fallback.
 
@@ -28,34 +47,40 @@ Claves canónicas `BLUESURF_*`; se aceptan `SURF_*` como fallback.
 - `BLUESURF_COOKIE` — cookie de sesión ya válida → usa `CookieAuth`.
 - `BLUESURF_USERNAME` + `BLUESURF_PASSWORD` — credenciales → usa `CredentialsAuth`.
 
+Precedencia: cookie en env → usuario/contraseña en env → `bluesurf-mcp login`.
+
+El núcleo (`bluesurf_client`) no persiste secretos.
+
 ## Correr el servidor
 
 ```bash
 bluesurf-mcp
 ```
 
-Se comunica por **stdio** (el transporte estándar para MCP local).
+Se comunica por **stdio** (el transporte estándar para MCP local). Sin
+argumentos no pide contraseña: usa env o las credenciales de `login`.
 
 ## Registrar el MCP en un cliente
 
-### Claude Code (`.mcp.json` o config de usuario)
+### Claude Code / Cursor (`.mcp.json` o config de usuario)
+
+Tras `bluesurf-mcp login`:
 
 ```json
 {
   "mcpServers": {
     "bluesurf": {
-      "command": "bluesurf-mcp",
-      "env": {
-        "BLUESURF_USERNAME": "usuario",
-        "BLUESURF_PASSWORD": "contraseña"
-      }
+      "command": "bluesurf-mcp"
     }
   }
 }
 ```
 
 Si `bluesurf-mcp` no está en el `PATH`, usa la ruta absoluta al ejecutable del
-venv o `python -m bluesurf_mcp.server`.
+venv o `python -m bluesurf_mcp`.
+
+Las variables `BLUESURF_*` en `env` siguen siendo válidas como override; no hace
+falta poner la contraseña ahí.
 
 ## Tools expuestas (solo lectura)
 

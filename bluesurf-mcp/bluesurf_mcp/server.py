@@ -3,16 +3,11 @@
 Adaptador delgado sobre ``bluesurf_client``: expone únicamente tools de solo lectura.
 No implementa ninguna operación de escritura por diseño.
 
-Config por variables de entorno (el consumidor entrega credenciales o cookie).
-Las claves canónicas son ``BLUESURF_*``; se aceptan ``SURF_*`` como fallback:
+Config: cookie o credenciales por entorno, o las guardadas con
+``bluesurf-mcp login`` (contraseña en el almacén del SO). Las claves
+canónicas son ``BLUESURF_*``; se aceptan ``SURF_*`` como fallback.
 
-- ``BLUESURF_BASE_URL`` / ``SURF_BASE_URL``: URL base (opcional; default
-  https://surf.bluepeople.com).
-- ``BLUESURF_COOKIE`` / ``SURF_COOKIE``: cookie de sesión ya válida → CookieAuth.
-- ``BLUESURF_USERNAME`` + ``BLUESURF_PASSWORD`` (o ``SURF_USERNAME`` +
-  ``SURF_PASSWORD``): credenciales → CredentialsAuth.
-
-La librería no persiste nada; la cookie vive en memoria mientras corre el server.
+La cookie de sesión de BlueSurf vive en memoria mientras corre el server.
 """
 
 from __future__ import annotations
@@ -25,6 +20,7 @@ from mcp.server import MCPServer
 from bluesurf_client import BlueSurfClient, CookieAuth, CredentialsAuth
 from bluesurf_client.auth.base import AuthProvider
 from bluesurf_client.constants import DEFAULT_BASE_URL
+from bluesurf_mcp.credentials_store import load as load_stored_credentials
 
 mcp = MCPServer("bluesurf")
 
@@ -49,9 +45,13 @@ def _build_auth() -> AuthProvider:
     if username and password:
         return CredentialsAuth(username, password)
 
+    stored = load_stored_credentials()
+    if stored:
+        return CredentialsAuth(stored[0], stored[1])
+
     raise RuntimeError(
-        "Falta configuración de autenticación: define BLUESURF_COOKIE, o bien "
-        "BLUESURF_USERNAME y BLUESURF_PASSWORD."
+        "Falta configuración de autenticación: corre `bluesurf-mcp login`, "
+        "o define BLUESURF_COOKIE, o bien BLUESURF_USERNAME y BLUESURF_PASSWORD."
     )
 
 
