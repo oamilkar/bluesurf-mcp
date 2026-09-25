@@ -1,0 +1,40 @@
+.dev
+
+# Secretos / credenciales (crítico: este proyecto maneja auth y cookies de Surf)
+.env
+.env.*
+*.env
+secrets.*
+*.secret
+cookies.txt
+*.cookies
+session.json
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Tests / herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# OS (Windows)
+Thumbs.db
+Desktop.ini
