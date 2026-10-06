@@ -24,16 +24,18 @@ Agente IA (cliente MCP)
       │  MCP (tools de solo lectura)
       ▼
 bluesurf-mcp/bluesurf_mcp      ← servidor MCP local (adaptador)
-      │  mis_proyectos, buscar_mis_tickets, obtener_ticket
+      │  mis_proyectos, buscar_mis_tickets, obtener_ticket,
+      │  listar_adjuntos, descargar_adjuntos
       ▼
 bluesurf-mcp/bluesurf_client   ← núcleo reutilizable
    ├─ auth/       interfaz AuthProvider (pluggable)
    ├─ session.py  cookie de sesión + re-auth ante 401
-   ├─ client.py   fachada: mis_proyectos, mis_tickets, obtener_ticket
-   └─ models.py   Ticket, Comment, User
+   ├─ client.py   fachada: mis_proyectos, mis_tickets, obtener_ticket,
+   │              listar_adjuntos, descargar_adjunto
+   └─ models.py   Ticket, Comment, User, Attachment
       │
       ▼
-BlueSurf (APIs JSON existentes)
+BlueSurf (API existente)
 ```
 
 **Solo lectura por diseño:** ni el núcleo ni el MCP exponen operaciones de

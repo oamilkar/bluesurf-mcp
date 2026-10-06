@@ -59,6 +59,38 @@ class Comment:
 
 
 @dataclass(slots=True)
+class Attachment:
+    """Un archivo de la sección Files de un work item."""
+
+    id: str
+    work_item_id: str
+    name: str | None = None
+    is_image: bool = False
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "Attachment":
+        return cls(
+            id=str(data.get("id", "")),
+            work_item_id=str(data.get("workItemId", "")),
+            name=data.get("name"),
+            is_image=bool(data.get("isImage", False)),
+            raw=data,
+        )
+
+
+@dataclass(slots=True)
+class DownloadedFile:
+    """Bytes de un adjunto ya descargado, y la ruta si se escribió a disco."""
+
+    id: str
+    name: str
+    content_type: str | None
+    content: bytes
+    path: str | None = None
+
+
+@dataclass(slots=True)
 class Ticket:
     """Un work item (ticket) de BlueSurf."""
 

@@ -11,13 +11,15 @@ Diseño de solo lectura: aquí no se expone ninguna operación de escritura.
 from bluesurf_client.auth import AuthError, AuthProvider, CookieAuth, CredentialsAuth
 from bluesurf_client.constants import DEFAULT_BASE_URL
 from bluesurf_client.client import BlueSurfClient
-from bluesurf_client.models import Comment, Ticket, User
+from bluesurf_client.models import Attachment, Comment, DownloadedFile, Ticket, User
 
 __all__ = [
     "BlueSurfClient",
     "Ticket",
     "Comment",
     "User",
+    "Attachment",
+    "DownloadedFile",
     "AuthProvider",
     "AuthError",
     "CredentialsAuth",

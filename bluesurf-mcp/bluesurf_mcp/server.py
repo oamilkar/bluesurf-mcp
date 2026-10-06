@@ -111,6 +111,53 @@ async def obtener_ticket(code: str) -> dict:
         await client.aclose()
 
 
+@mcp.tool()
+async def listar_adjuntos(code: str) -> list[dict]:
+    """Lista los archivos de la sección Files de un ticket, sin descargarlos.
+
+    Args:
+        code: código del ticket (p. ej. PROJ-123).
+    """
+    client = await _client()
+    try:
+        adjuntos = await client.listar_adjuntos(code)
+        return [
+            {"id": a.id, "name": a.name, "is_image": a.is_image} for a in adjuntos
+        ]
+    finally:
+        await client.aclose()
+
+
+@mcp.tool()
+async def descargar_adjuntos(
+    code: str, destino: str, archivo_id: str | None = None
+) -> list[dict]:
+    """Descarga los adjuntos de un ticket a una carpeta local.
+
+    Args:
+        code: código del ticket (p. ej. PROJ-123).
+        destino: directorio donde se guardan los archivos. Se crea si no existe.
+        archivo_id: si se indica, descarga solo ese adjunto; si no, descarga todos.
+    """
+    client = await _client()
+    try:
+        archivos = await client.descargar_adjuntos(
+            code, destino, archivo_id=archivo_id
+        )
+        return [
+            {
+                "id": archivo.id,
+                "name": archivo.name,
+                "path": archivo.path,
+                "content_type": archivo.content_type,
+                "size": len(archivo.content),
+            }
+            for archivo in archivos
+        ]
+    finally:
+        await client.aclose()
+
+
 def main() -> None:
     """Entrypoint para correr el servidor MCP por stdio."""
     mcp.run()

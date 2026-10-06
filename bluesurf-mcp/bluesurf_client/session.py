@@ -8,12 +8,22 @@ de solo lectura por diseño, así que no hay POST/PUT/PATCH/DELETE aquí.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from bluesurf_client.auth.base import AuthError, AuthProvider
 from bluesurf_client.constants import DEFAULT_BASE_URL
+
+
+@dataclass(slots=True)
+class BinaryResponse:
+    """Cuerpo binario de un GET, con el tipo y las cabeceras de la respuesta."""
+
+    content: bytes
+    content_type: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 class BlueSurfSession:
@@ -57,7 +67,26 @@ class BlueSurfSession:
         kanban). No muta estado; es una lectura parametrizada."""
         return await self._request_json("POST", path, json=json, **kwargs)
 
+    async def get_bytes(self, path: str, **kwargs: Any) -> BinaryResponse:
+        """GET binario (adjuntos). Pide ``Accept: */*`` para no forzar JSON.
+
+        Re-autentica una vez si BlueSurf responde 401, igual que :meth:`get_json`.
+        """
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers["Accept"] = "*/*"
+        response = await self._request("GET", path, headers=headers, **kwargs)
+        content_type = response.headers.get("content-type")
+        return BinaryResponse(
+            content=response.content,
+            content_type=content_type,
+            headers=dict(response.headers),
+        )
+
     async def _request_json(self, method: str, path: str, **kwargs: Any) -> Any:
+        response = await self._request(method, path, **kwargs)
+        return response.json()
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         if self._auth is None:
             raise AuthError("La sesión no está autenticada: llama a login() primero")
 
@@ -72,4 +101,4 @@ class BlueSurfSession:
             raise AuthError("BlueSurf sigue devolviendo 401 tras renovar la sesión")
 
         response.raise_for_status()
-        return response.json()
+        return response

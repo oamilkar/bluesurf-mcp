@@ -87,6 +87,8 @@ falta poner la contraseña ahí.
 - `mis_proyectos` — proyectos del usuario (id, smallCode, code, name).
 - `buscar_mis_tickets(project, include_closed=False)` — tickets asignados al usuario.
 - `obtener_ticket(code)` — detalle de un ticket por su código (p. ej. `PROJ-123`).
+- `listar_adjuntos(code)` — archivos de la sección Files del ticket (id, name, is_image), sin descargarlos.
+- `descargar_adjuntos(code, destino, archivo_id=None)` — guarda esos archivos en `destino`. Con `archivo_id` descarga solo uno; si no, todos. Devuelve id, name, path, content_type y size.
 
 ## Usar el cliente desde Python
 
