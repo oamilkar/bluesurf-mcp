@@ -15,6 +15,9 @@ bluesurf-mcp
 El desarrollo va en `bluesurf-mcp/`. Detalle de tools, variables de entorno y
 registro en un cliente MCP: [`bluesurf-mcp/README.md`](./bluesurf-mcp/README.md).
 
+Manual de instalación (Python 3.10+, `pip`, login y Cursor):
+[`MANUAL_INSTALACION.md`](./MANUAL_INSTALACION.md).
+
 ## Arquitectura
 
 Diseño en capas — toda la lógica vive en el núcleo y los adaptadores son delgados:

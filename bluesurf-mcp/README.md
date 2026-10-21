@@ -8,6 +8,9 @@ tickets de **BlueSurf**. Un solo paquete PyPI incluye el núcleo
 
 ## Instalación
 
+Requiere **Python 3.10 o superior**. Guía paso a paso (instalación global, login
+y Cursor): [`MANUAL_INSTALACION.md`](../MANUAL_INSTALACION.md) en el repositorio.
+
 ```bash
 pip install bluesurf-mcp
 ```
@@ -76,8 +79,8 @@ Tras `bluesurf-mcp login`:
 }
 ```
 
-Si `bluesurf-mcp` no está en el `PATH`, usa la ruta absoluta al ejecutable del
-venv o `python -m bluesurf_mcp`.
+Si `bluesurf-mcp` no está en el `PATH`, usa la ruta absoluta al ejecutable o
+`python -m bluesurf_mcp`.
 
 Las variables `BLUESURF_*` en `env` siguen siendo válidas como override; no hace
 falta poner la contraseña ahí.
