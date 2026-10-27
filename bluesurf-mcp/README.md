@@ -1,10 +1,8 @@
 # bluesurf-mcp
 
-Servidor MCP local de **solo lectura** para que Claude u otros agentes IA lean
-tickets de **BlueSurf**. Un solo paquete PyPI incluye el núcleo
-(`bluesurf_client`) y el adaptador MCP (`bluesurf_mcp`).
-
-**Solo lectura por diseño:** no hay operaciones de escritura.
+Servidor MCP local para que Claude u otros agentes IA lean tickets de
+**BlueSurf**, adjunten un archivo y publiquen un comentario. Un solo paquete
+PyPI incluye el núcleo (`bluesurf_client`) y el adaptador MCP (`bluesurf_mcp`).
 
 ## Instalación
 
@@ -85,13 +83,15 @@ Si `bluesurf-mcp` no está en el `PATH`, usa la ruta absoluta al ejecutable o
 Las variables `BLUESURF_*` en `env` siguen siendo válidas como override; no hace
 falta poner la contraseña ahí.
 
-## Tools expuestas (solo lectura)
+## Tools expuestas
 
 - `mis_proyectos` — proyectos del usuario (id, smallCode, code, name).
 - `buscar_mis_tickets(project, include_closed=False)` — tickets asignados al usuario.
 - `obtener_ticket(code)` — detalle de un ticket por su código (p. ej. `PROJ-123`).
 - `listar_adjuntos(code)` — archivos de la sección Files del ticket (id, name, is_image), sin descargarlos.
 - `descargar_adjuntos(code, destino, archivo_id=None)` — guarda esos archivos en `destino`. Con `archivo_id` descarga solo uno; si no, todos. Devuelve id, name, path, content_type y size.
+- `adjuntar_archivo(code, ruta)` — sube un archivo local a la sección Files. Devuelve id, name e is_image del archivo nuevo.
+- `agregar_comentario(code, texto)` — publica un comentario. El texto se escapa y se envuelve en un párrafo HTML. Devuelve id, author, body y created_at.
 
 ## Usar el cliente desde Python
 

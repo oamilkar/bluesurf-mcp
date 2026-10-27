@@ -1,11 +1,9 @@
-"""Núcleo de solo lectura para hablar con BlueSurf.
+"""Núcleo para hablar con BlueSurf.
 
 Este paquete concentra toda la lógica reutilizable: autenticación (pluggable),
-manejo de sesión/cookie, endpoints de lectura y modelos tipados. Los adaptadores
-(el servidor MCP local y una eventual CLI) se construyen encima de esto sin
-duplicar lógica.
-
-Diseño de solo lectura: aquí no se expone ninguna operación de escritura.
+manejo de sesión/cookie, lecturas y las dos escrituras (adjuntar un archivo y
+publicar un comentario). Los adaptadores (el servidor MCP local y una eventual
+CLI) se construyen encima de esto sin duplicar lógica.
 """
 
 from bluesurf_client.auth import AuthError, AuthProvider, CookieAuth, CredentialsAuth

@@ -1,9 +1,9 @@
-"""Cliente de solo lectura de BlueSurf (la fachada de alto nivel).
+"""Cliente de BlueSurf (la fachada de alto nivel).
 
 Expone las lecturas centradas en el objetivo: los tickets (work items) asignados
 al usuario. En BlueSurf no hay un endpoint "asignados a mí"; se resuelve consultando
 el kanban de un proyecto con el filtro ``assignedTo`` puesto en el id del usuario
-actual.
+actual. También adjunta un archivo y publica un comentario.
 
 Ciclo de vida:
 - Construcción sin efectos: ``BlueSurfClient(base_url=...)``.
@@ -13,13 +13,15 @@ Ciclo de vida:
 
 from __future__ import annotations
 
+import html
 import json
+import mimetypes
 from pathlib import Path
 from typing import Any
 
 from bluesurf_client.auth.base import AuthProvider
 from bluesurf_client.constants import DEFAULT_BASE_URL, IDENTITY_COOKIE
-from bluesurf_client.models import Attachment, DownloadedFile, Ticket, User
+from bluesurf_client.models import Attachment, Comment, DownloadedFile, Ticket, User
 from bluesurf_client.session import BlueSurfSession
 
 _PATH_CURRENT_USER = "/api/instance/currentUser"
@@ -29,6 +31,8 @@ _PATH_WORKITEM = "/api/workItem/{code}"
 _PATH_FILE_NAME = "/api/workItem/{work_item_id}/fileName/{file_id}"
 _PATH_FILE = "/api/workItem/{work_item_id}/file/{file_id}"
 _PATH_IMAGE = "/api/workItem/{work_item_id}/image/{file_id}"
+_PATH_UPLOAD = "/api/workItem/{work_item_id}/file"
+_PATH_COMMENT = "/api/WorkItem/{work_item_id}/comment"
 
 # Body base del kanban (todos los filtros vacíos). Se rellena ``assignedTo`` con
 # el id del usuario actual para que BlueSurf filtre del lado servidor.
@@ -48,7 +52,7 @@ _KANBAN_FILTER_TEMPLATE: dict[str, Any] = {
 
 
 class BlueSurfClient:
-    """Fachada de solo lectura sobre la API de BlueSurf."""
+    """Fachada sobre la API de BlueSurf."""
 
     def __init__(self, *, base_url: str = DEFAULT_BASE_URL) -> None:
         self._session = BlueSurfSession(base_url=base_url)
@@ -195,6 +199,52 @@ class BlueSurfClient:
             descargados.append(await self._bajar_adjunto(adjunto, carpeta))
         return descargados
 
+    async def adjuntar_archivo(self, code: str, ruta: Path | str) -> Attachment:
+        """Sube un archivo local a la sección Files del ticket.
+
+        El POST va al id del work item, no al código. Devuelve el archivo nuevo
+        que apareció en la respuesta.
+        """
+        origen = Path(ruta)
+        if not origen.is_file():
+            raise FileNotFoundError(f"No existe el archivo {origen}")
+        ticket = await self.obtener_ticket(code)
+        if not ticket.id:
+            raise LookupError(f"El ticket {code} no tiene id")
+        previos = _ids_de_archivos(ticket)
+        nombre = _nombre_seguro(origen.name, origen.name)
+        contenido = origen.read_bytes()
+        tipo = mimetypes.guess_type(nombre)[0] or "application/octet-stream"
+
+        data = await self._session.post_multipart(
+            _PATH_UPLOAD.format(work_item_id=ticket.id),
+            files=lambda: {"file": (nombre, contenido, tipo)},
+        )
+        return _adjunto_nuevo(data, previos, nombre, ticket.id)
+
+    async def agregar_comentario(self, code: str, texto: str) -> Comment:
+        """Publica un comentario. El texto se escapa y se envuelve en ``<p>``.
+
+        El campo multipart ``comment`` lleva el JSON ``{"comment": "<p>…</p>"}``.
+        """
+        limpio = texto.strip()
+        if not limpio:
+            raise ValueError("El comentario está vacío")
+        ticket = await self.obtener_ticket(code)
+        if not ticket.id:
+            raise LookupError(f"El ticket {code} no tiene id")
+        previos = {item.id for item in ticket.comments if item.id}
+        payload = json.dumps(
+            {"comment": f"<p>{html.escape(limpio)}</p>"},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        data = await self._session.post_multipart(
+            _PATH_COMMENT.format(work_item_id=ticket.id),
+            files=lambda: {"comment": (None, payload)},
+        )
+        return _comentario_nuevo(data, previos)
+
     async def _nombre_adjunto(self, work_item_id: str, file_id: str) -> str | None:
         body = await self._session.get_bytes(
             _PATH_FILE_NAME.format(work_item_id=work_item_id, file_id=file_id)
@@ -267,6 +317,49 @@ def _ruta_destino(destino: Path, nombre: str, archivo_id: str) -> Path:
         path = Path(filename)
         candidate = (root / f"{path.stem}-{archivo_id}{path.suffix}").resolve()
     return candidate
+
+
+def _ids_de_archivos(ticket: Ticket) -> set[str]:
+    ids: set[str] = set()
+    for raw in ticket.raw.get("files") or []:
+        if isinstance(raw, dict) and raw.get("id"):
+            ids.add(str(raw["id"]))
+    return ids
+
+
+def _adjunto_nuevo(
+    data: Any, previos: set[str], nombre: str, work_item_id: str
+) -> Attachment:
+    ticket = _ticket_de_respuesta(data)
+    nuevos: list[Attachment] = []
+    for raw in ticket.raw.get("files") or []:
+        if not isinstance(raw, dict):
+            continue
+        adjunto = Attachment.from_json(raw)
+        if not adjunto.id or adjunto.id in previos:
+            continue
+        if not adjunto.name:
+            adjunto.name = nombre
+        if not adjunto.work_item_id:
+            adjunto.work_item_id = work_item_id
+        nuevos.append(adjunto)
+    if not nuevos:
+        raise LookupError("BlueSurf no devolvió el archivo nuevo")
+    return nuevos[-1]
+
+
+def _comentario_nuevo(data: Any, previos: set[str]) -> Comment:
+    ticket = _ticket_de_respuesta(data)
+    nuevos = [item for item in ticket.comments if item.id and item.id not in previos]
+    if not nuevos:
+        raise LookupError("BlueSurf no devolvió el comentario nuevo")
+    return nuevos[-1]
+
+
+def _ticket_de_respuesta(data: Any) -> Ticket:
+    if not isinstance(data, dict):
+        raise LookupError("BlueSurf no devolvió el work item")
+    return Ticket.from_json(data)
 
 
 def _iter_work_items(kanban: Any):

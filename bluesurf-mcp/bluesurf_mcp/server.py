@@ -1,7 +1,7 @@
-"""Servidor MCP local para leer tickets de BlueSurf.
+"""Servidor MCP local para tickets de BlueSurf.
 
-Adaptador delgado sobre ``bluesurf_client``: expone únicamente tools de solo lectura.
-No implementa ninguna operación de escritura por diseño.
+Adaptador delgado sobre ``bluesurf_client``. Lee tickets y, además, adjunta
+un archivo y publica un comentario.
 
 Config: cookie o credenciales por entorno, o las guardadas con
 ``bluesurf-mcp login`` (contraseña en el almacén del SO). Las claves
@@ -18,6 +18,7 @@ from dataclasses import asdict
 from mcp.server import MCPServer
 
 from bluesurf_client import BlueSurfClient, CookieAuth, CredentialsAuth
+from bluesurf_client.models import Attachment, Comment
 from bluesurf_client.auth.base import AuthProvider
 from bluesurf_client.constants import DEFAULT_BASE_URL
 from bluesurf_mcp.credentials_store import load as load_stored_credentials
@@ -156,6 +157,54 @@ async def descargar_adjuntos(
         ]
     finally:
         await client.aclose()
+
+
+@mcp.tool()
+async def adjuntar_archivo(code: str, ruta: str) -> dict:
+    """Adjunta un archivo local a un ticket de BlueSurf.
+
+    Args:
+        code: código del ticket (p. ej. PROJ-123).
+        ruta: ruta local del archivo. Se sube solo el nombre, sin directorios.
+    """
+    client = await _client()
+    try:
+        adjunto = await client.adjuntar_archivo(code, ruta)
+        return _adjunto_publico(adjunto)
+    finally:
+        await client.aclose()
+
+
+@mcp.tool()
+async def agregar_comentario(code: str, texto: str) -> dict:
+    """Publica un comentario en un ticket de BlueSurf.
+
+    El texto se escapa y se envuelve en un párrafo HTML, que es la forma que
+    usa la interfaz de BlueSurf.
+
+    Args:
+        code: código del ticket (p. ej. PROJ-123).
+        texto: comentario en texto plano.
+    """
+    client = await _client()
+    try:
+        comentario = await client.agregar_comentario(code, texto)
+        return _comentario_publico(comentario)
+    finally:
+        await client.aclose()
+
+
+def _adjunto_publico(adjunto: Attachment) -> dict:
+    return {"id": adjunto.id, "name": adjunto.name, "is_image": adjunto.is_image}
+
+
+def _comentario_publico(comentario: Comment) -> dict:
+    return {
+        "id": comentario.id,
+        "author": comentario.author,
+        "body": comentario.body,
+        "created_at": comentario.created_at,
+    }
 
 
 def main() -> None:

@@ -2,12 +2,14 @@
 
 Envuelve ``httpx.AsyncClient``. La construcción no tiene efectos: la
 autenticación es explícita vía :meth:`login`, que recibe el ``AuthProvider``
-(inyección por método). Solo expone verbos de lectura (GET): el intermediario es
-de solo lectura por diseño, así que no hay POST/PUT/PATCH/DELETE aquí.
+(inyección por método). Las lecturas usan GET (y un POST de filtro para el
+kanban). Adjuntar un archivo y publicar un comentario usan
+:meth:`post_multipart`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,7 +29,7 @@ class BinaryResponse:
 
 
 class BlueSurfSession:
-    """Sesión de solo lectura contra la API de BlueSurf."""
+    """Sesión HTTP contra la API de BlueSurf."""
 
     def __init__(
         self,
@@ -102,3 +104,26 @@ class BlueSurfSession:
 
         response.raise_for_status()
         return response
+
+    async def post_multipart(
+        self,
+        path: str,
+        *,
+        files: Callable[[], Mapping[str, Any]],
+    ) -> Any:
+        """POST multipart. ``files`` se llama en cada intento, incluido el reintento
+        ante un 401, para no reenviar un cuerpo ya consumido.
+
+        No fija ``Content-Type``: lo arma httpx con el boundary del multipart.
+        """
+        if self._auth is None:
+            raise AuthError("La sesión no está autenticada: llama a login() primero")
+
+        response = await self._client.request("POST", path, files=files())
+        if response.status_code == 401:
+            await self._auth.refresh(self._client)
+            response = await self._client.request("POST", path, files=files())
+        if response.status_code == 401:
+            raise AuthError("BlueSurf sigue devolviendo 401 tras renovar la sesión")
+        response.raise_for_status()
+        return response.json()

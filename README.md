@@ -1,7 +1,7 @@
 # bluesurf-mcp
 
-Intermediario de **solo lectura** para que Claude u otros agentes IA lean tickets
-de **BlueSurf**.
+Intermediario para que Claude u otros agentes IA lean tickets de **BlueSurf**,
+adjunten un archivo y publiquen un comentario.
 
 **Unidad publicable:** [`bluesurf-mcp/`](./bluesurf-mcp) — un distro PyPI
 (`bluesurf-mcp`) con dos paquetes de import (`bluesurf_client` + `bluesurf_mcp`).
@@ -24,26 +24,27 @@ Diseño en capas — toda la lógica vive en el núcleo y los adaptadores son de
 
 ```
 Agente IA (cliente MCP)
-      │  MCP (tools de solo lectura)
+      │  MCP (tools)
       ▼
 bluesurf-mcp/bluesurf_mcp      ← servidor MCP local (adaptador)
       │  mis_proyectos, buscar_mis_tickets, obtener_ticket,
-      │  listar_adjuntos, descargar_adjuntos
+      │  listar_adjuntos, descargar_adjuntos,
+      │  adjuntar_archivo, agregar_comentario
       ▼
 bluesurf-mcp/bluesurf_client   ← núcleo reutilizable
    ├─ auth/       interfaz AuthProvider (pluggable)
    ├─ session.py  cookie de sesión + re-auth ante 401
    ├─ client.py   fachada: mis_proyectos, mis_tickets, obtener_ticket,
-   │              listar_adjuntos, descargar_adjunto
+   │              listar_adjuntos, descargar_adjunto,
+   │              adjuntar_archivo, agregar_comentario
    └─ models.py   Ticket, Comment, User, Attachment
       │
       ▼
 BlueSurf (API existente)
 ```
 
-**Solo lectura por diseño:** ni el núcleo ni el MCP exponen operaciones de
-escritura. El kanban se consulta con un POST de lectura (body de filtro); no hay
-mutaciones.
+El kanban se consulta con un POST de filtro. Las escrituras son
+`adjuntar_archivo` y `agregar_comentario`.
 
 ## Desarrollo
 

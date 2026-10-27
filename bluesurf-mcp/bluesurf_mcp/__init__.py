@@ -1,1 +1,1 @@
-"""Servidor MCP local: adaptador de solo lectura sobre bluesurf_client."""
+"""Servidor MCP local: adaptador sobre bluesurf_client."""
