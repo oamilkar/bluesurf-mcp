@@ -1,7 +1,7 @@
 # bluesurf-mcp
 
 Intermediario para que Claude u otros agentes IA lean tickets de **BlueSurf**,
-adjunten un archivo y publiquen un comentario.
+adjunten un archivo, publiquen un comentario y registren tiempo en el daily report.
 
 **Unidad publicable:** [`bluesurf-mcp/`](./bluesurf-mcp) — un distro PyPI
 (`bluesurf-mcp`) con dos paquetes de import (`bluesurf_client` + `bluesurf_mcp`).
@@ -29,22 +29,27 @@ Agente IA (cliente MCP)
 bluesurf-mcp/bluesurf_mcp      ← servidor MCP local (adaptador)
       │  mis_proyectos, buscar_mis_tickets, obtener_ticket,
       │  listar_adjuntos, descargar_adjuntos,
-      │  adjuntar_archivo, agregar_comentario
+      │  adjuntar_archivo, agregar_comentario,
+      │  proyectos_reporte, listar_categorias,
+      │  mi_reporte_diario, registrar_tiempo
       ▼
 bluesurf-mcp/bluesurf_client   ← núcleo reutilizable
    ├─ auth/       interfaz AuthProvider (pluggable)
    ├─ session.py  cookie de sesión + re-auth ante 401
    ├─ client.py   fachada: mis_proyectos, mis_tickets, obtener_ticket,
    │              listar_adjuntos, descargar_adjunto,
-   │              adjuntar_archivo, agregar_comentario
-   └─ models.py   Ticket, Comment, User, Attachment
+   │              adjuntar_archivo, agregar_comentario,
+   │              proyectos_reporte, listar_categorias,
+   │              mi_reporte_diario, registrar_tiempo
+   └─ models.py   Ticket, Comment, User, Attachment,
+                  ProyectoReporte, CategoriaReporte, ReporteDiario
       │
       ▼
 BlueSurf (API existente)
 ```
 
 El kanban se consulta con un POST de filtro. Las escrituras son
-`adjuntar_archivo` y `agregar_comentario`.
+`adjuntar_archivo`, `agregar_comentario` y `registrar_tiempo`.
 
 ## Desarrollo
 

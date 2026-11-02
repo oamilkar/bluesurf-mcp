@@ -3,8 +3,8 @@
 Envuelve ``httpx.AsyncClient``. La construcción no tiene efectos: la
 autenticación es explícita vía :meth:`login`, que recibe el ``AuthProvider``
 (inyección por método). Las lecturas usan GET (y un POST de filtro para el
-kanban). Adjuntar un archivo y publicar un comentario usan
-:meth:`post_multipart`.
+kanban). Guardar el daily report usa :meth:`post_json`. Adjuntar un archivo
+y publicar un comentario usan :meth:`post_multipart`.
 """
 
 from __future__ import annotations
@@ -68,6 +68,16 @@ class BlueSurfSession:
         """POST de solo lectura: consulta que requiere body de filtro (p. ej. el
         kanban). No muta estado; es una lectura parametrizada."""
         return await self._request_json("POST", path, json=json, **kwargs)
+
+    async def post_json(self, path: str, json: Any, **kwargs: Any) -> Any:
+        """POST JSON. Un cuerpo de respuesta vacío devuelve ``None``.
+
+        El daily report responde 200 sin cuerpo; ``response.json()`` fallaría.
+        """
+        response = await self._request("POST", path, json=json, **kwargs)
+        if not response.content or not response.content.strip():
+            return None
+        return response.json()
 
     async def get_bytes(self, path: str, **kwargs: Any) -> BinaryResponse:
         """GET binario (adjuntos). Pide ``Accept: */*`` para no forzar JSON.

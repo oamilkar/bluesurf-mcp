@@ -1,7 +1,7 @@
 """Servidor MCP local para tickets de BlueSurf.
 
 Adaptador delgado sobre ``bluesurf_client``. Lee tickets y, además, adjunta
-un archivo y publica un comentario.
+un archivo, publica un comentario y registra tiempo en el daily report.
 
 Config: cookie o credenciales por entorno, o las guardadas con
 ``bluesurf-mcp login`` (contraseña en el almacén del SO). Las claves
@@ -196,6 +196,84 @@ async def agregar_comentario(code: str, texto: str) -> dict:
 
 def _adjunto_publico(adjunto: Attachment) -> dict:
     return {"id": adjunto.id, "name": adjunto.name, "is_image": adjunto.is_image}
+
+
+@mcp.tool()
+async def proyectos_reporte() -> list[dict]:
+    """Lista los proyectos activos en los que se puede registrar tiempo.
+
+    Devuelve id, smallCode, code, name y categoryIds. El smallCode se pasa a
+    registrar_tiempo. Omitir el proyecto registra tiempo sin proyecto.
+    """
+    client = await _client()
+    try:
+        proyectos = await client.proyectos_reporte()
+        return [proyecto.publico() for proyecto in proyectos]
+    finally:
+        await client.aclose()
+
+
+@mcp.tool()
+async def listar_categorias(proyecto: str | None = None) -> list[dict]:
+    """Subcategorías para una línea de tiempo.
+
+    Args:
+        proyecto: smallCode. Si se indica, solo las categorías de ese proyecto.
+            registrar_tiempo acepta el nombre o "Categoria: Nombre" y lo resuelve
+            contra el catálogo completo.
+    """
+    client = await _client()
+    try:
+        categorias = await client.listar_categorias(proyecto)
+        return [categoria.publico() for categoria in categorias]
+    finally:
+        await client.aclose()
+
+
+@mcp.tool()
+async def mi_reporte_diario(fecha: str) -> dict:
+    """Devuelve el daily report de un día.
+
+    Args:
+        fecha: día en formato YYYY-MM-DD.
+
+    ``cerrado`` es true cuando ``status`` es 2 y ese día ya no se puede editar.
+    """
+    client = await _client()
+    try:
+        reporte = await client.mi_reporte_diario(fecha)
+        return reporte.publico()
+    finally:
+        await client.aclose()
+
+
+@mcp.tool()
+async def registrar_tiempo(
+    fecha: str,
+    lineas: list[dict],
+    confirmar: bool = False,
+) -> dict:
+    """Agrega una o más líneas al daily report y reenvía el día en un solo POST.
+
+    No borra las líneas que ya estaban. Si el día está cerrado o alguna línea es
+    inválida, no escribe. Una sola línea es un arreglo de un elemento.
+
+    Args:
+        fecha: día en formato YYYY-MM-DD.
+        lineas: cada elemento tiene horas (decimal; 1.25 son 1 h 15 min),
+            categoria (nombre, o "Categoria: Nombre" si está repetido) y, si
+            aplica, descripcion, proyecto (smallCode), ticket (código PROJ-123)
+            y pendiente. Sin ticket la descripción es obligatoria. Con ticket el
+            tiempo queda ligado a ese work item.
+        confirmar: si True cierra el día (status 2). Por defecto guarda un
+            borrador (status 0).
+    """
+    client = await _client()
+    try:
+        reporte = await client.registrar_tiempo(fecha, lineas, confirmar=confirmar)
+        return reporte.publico()
+    finally:
+        await client.aclose()
 
 
 def _comentario_publico(comentario: Comment) -> dict:
