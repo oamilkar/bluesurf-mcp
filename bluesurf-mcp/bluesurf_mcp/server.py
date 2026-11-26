@@ -4,15 +4,21 @@ Adaptador delgado sobre ``bluesurf_client``. Lee tickets y, además, adjunta
 un archivo, publica un comentario y registra tiempo en el daily report.
 
 Config: cookie o credenciales por entorno, o las guardadas con
-``bluesurf-mcp login`` (contraseña en el almacén del SO). Las claves
-canónicas son ``BLUESURF_*``; se aceptan ``SURF_*`` como fallback.
+``bluesurf-mcp login`` (contraseña y cookie de sesión opcional en el almacén
+del SO). Las claves canónicas son ``BLUESURF_*``; se aceptan ``SURF_*`` como
+fallback.
 
-La cookie de sesión de BlueSurf vive en memoria mientras corre el server.
+Reutiliza un solo ``BlueSurfClient`` por proceso. La cookie de sesión vive en
+memoria mientras corre el server; con credenciales (sin ``BLUESURF_COOKIE``)
+también puede guardarse en el keyring para evitar un POST a ``/api/login`` al
+arrancar.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+from collections.abc import Callable
 from dataclasses import asdict
 
 from mcp.server import MCPServer
@@ -21,9 +27,16 @@ from bluesurf_client import BlueSurfClient, CookieAuth, CredentialsAuth
 from bluesurf_client.models import Attachment, Comment
 from bluesurf_client.auth.base import AuthProvider
 from bluesurf_client.constants import DEFAULT_BASE_URL
-from bluesurf_mcp.credentials_store import load as load_stored_credentials
+from bluesurf_mcp.credentials_store import (
+    load as load_stored_credentials,
+    load_session_cookie,
+    save_session_cookie,
+)
 
 mcp = MCPServer("bluesurf")
+
+_shared_client: BlueSurfClient | None = None
+_shared_client_lock = asyncio.Lock()
 
 
 def _env(*names: str) -> str | None:
@@ -35,7 +48,9 @@ def _env(*names: str) -> str | None:
     return None
 
 
-def _build_auth() -> AuthProvider:
+def _build_auth(
+    load_cached_session_cookie: Callable[[str], str | None] = load_session_cookie,
+) -> AuthProvider:
     """Construye el AuthProvider a partir del entorno (cookie o credenciales)."""
     cookie = _env("BLUESURF_COOKIE", "SURF_COOKIE")
     if cookie:
@@ -44,11 +59,24 @@ def _build_auth() -> AuthProvider:
     username = _env("BLUESURF_USERNAME", "SURF_USERNAME")
     password = _env("BLUESURF_PASSWORD", "SURF_PASSWORD")
     if username and password:
-        return CredentialsAuth(username, password)
+        return CredentialsAuth(
+            username,
+            password,
+            initial_session_cookie=load_cached_session_cookie(username),
+            persist_session=True,
+            persist_cookie=save_session_cookie,
+        )
 
     stored = load_stored_credentials()
     if stored:
-        return CredentialsAuth(stored[0], stored[1])
+        u, p = stored
+        return CredentialsAuth(
+            u,
+            p,
+            initial_session_cookie=load_cached_session_cookie(u),
+            persist_session=True,
+            persist_cookie=save_session_cookie,
+        )
 
     raise RuntimeError(
         "Falta configuración de autenticación: corre `bluesurf-mcp login`, "
@@ -61,9 +89,22 @@ def _base_url() -> str:
 
 
 async def _client() -> BlueSurfClient:
-    client = BlueSurfClient(base_url=_base_url())
-    await client.login(_build_auth())
-    return client
+    """Cliente HTTP compartido por proceso (login una sola vez). Los tests pueden
+    monkeypatchear esta función para inyectar un cliente falso.
+    """
+    global _shared_client
+    async with _shared_client_lock:
+        if _shared_client is None:
+            client = BlueSurfClient(base_url=_base_url())
+            await client.login(_build_auth())
+            _shared_client = client
+        return _shared_client
+
+
+def reset_shared_client() -> None:
+    """Solo para tests: olvida el cliente compartido."""
+    global _shared_client
+    _shared_client = None
 
 
 @mcp.tool()
@@ -73,14 +114,11 @@ async def mis_proyectos() -> list[dict]:
     El ``smallCode`` (p. ej. "PROJ") es lo que se pasa a buscar_mis_tickets.
     """
     client = await _client()
-    try:
-        proyectos = await client.mis_proyectos()
-        return [
-            {k: p.get(k) for k in ("id", "smallCode", "code", "name")}
-            for p in proyectos
-        ]
-    finally:
-        await client.aclose()
+    proyectos = await client.mis_proyectos()
+    return [
+        {k: p.get(k) for k in ("id", "smallCode", "code", "name")}
+        for p in proyectos
+    ]
 
 
 @mcp.tool()
@@ -94,22 +132,16 @@ async def buscar_mis_tickets(project: str, include_closed: bool = False) -> list
             solo los abiertos.
     """
     client = await _client()
-    try:
-        tickets = await client.mis_tickets(project, include_closed=include_closed)
-        return [asdict(t) for t in tickets]
-    finally:
-        await client.aclose()
+    tickets = await client.mis_tickets(project, include_closed=include_closed)
+    return [asdict(t) for t in tickets]
 
 
 @mcp.tool()
 async def obtener_ticket(code: str) -> dict:
     """Devuelve el detalle de un ticket de BlueSurf por su código (p. ej. PROJ-123)."""
     client = await _client()
-    try:
-        ticket = await client.obtener_ticket(code)
-        return asdict(ticket)
-    finally:
-        await client.aclose()
+    ticket = await client.obtener_ticket(code)
+    return asdict(ticket)
 
 
 @mcp.tool()
@@ -120,13 +152,8 @@ async def listar_adjuntos(code: str) -> list[dict]:
         code: código del ticket (p. ej. PROJ-123).
     """
     client = await _client()
-    try:
-        adjuntos = await client.listar_adjuntos(code)
-        return [
-            {"id": a.id, "name": a.name, "is_image": a.is_image} for a in adjuntos
-        ]
-    finally:
-        await client.aclose()
+    adjuntos = await client.listar_adjuntos(code)
+    return [{"id": a.id, "name": a.name, "is_image": a.is_image} for a in adjuntos]
 
 
 @mcp.tool()
@@ -141,22 +168,17 @@ async def descargar_adjuntos(
         archivo_id: si se indica, descarga solo ese adjunto; si no, descarga todos.
     """
     client = await _client()
-    try:
-        archivos = await client.descargar_adjuntos(
-            code, destino, archivo_id=archivo_id
-        )
-        return [
-            {
-                "id": archivo.id,
-                "name": archivo.name,
-                "path": archivo.path,
-                "content_type": archivo.content_type,
-                "size": len(archivo.content),
-            }
-            for archivo in archivos
-        ]
-    finally:
-        await client.aclose()
+    archivos = await client.descargar_adjuntos(code, destino, archivo_id=archivo_id)
+    return [
+        {
+            "id": archivo.id,
+            "name": archivo.name,
+            "path": archivo.path,
+            "content_type": archivo.content_type,
+            "size": len(archivo.content),
+        }
+        for archivo in archivos
+    ]
 
 
 @mcp.tool()
@@ -168,11 +190,8 @@ async def adjuntar_archivo(code: str, ruta: str) -> dict:
         ruta: ruta local del archivo. Se sube solo el nombre, sin directorios.
     """
     client = await _client()
-    try:
-        adjunto = await client.adjuntar_archivo(code, ruta)
-        return _adjunto_publico(adjunto)
-    finally:
-        await client.aclose()
+    adjunto = await client.adjuntar_archivo(code, ruta)
+    return _adjunto_publico(adjunto)
 
 
 @mcp.tool()
@@ -187,11 +206,8 @@ async def agregar_comentario(code: str, texto: str) -> dict:
         texto: comentario en texto plano.
     """
     client = await _client()
-    try:
-        comentario = await client.agregar_comentario(code, texto)
-        return _comentario_publico(comentario)
-    finally:
-        await client.aclose()
+    comentario = await client.agregar_comentario(code, texto)
+    return _comentario_publico(comentario)
 
 
 def _adjunto_publico(adjunto: Attachment) -> dict:
@@ -206,11 +222,8 @@ async def proyectos_reporte() -> list[dict]:
     registrar_tiempo. Omitir el proyecto registra tiempo sin proyecto.
     """
     client = await _client()
-    try:
-        proyectos = await client.proyectos_reporte()
-        return [proyecto.publico() for proyecto in proyectos]
-    finally:
-        await client.aclose()
+    proyectos = await client.proyectos_reporte()
+    return [proyecto.publico() for proyecto in proyectos]
 
 
 @mcp.tool()
@@ -223,11 +236,8 @@ async def listar_categorias(proyecto: str | None = None) -> list[dict]:
             contra el catálogo completo.
     """
     client = await _client()
-    try:
-        categorias = await client.listar_categorias(proyecto)
-        return [categoria.publico() for categoria in categorias]
-    finally:
-        await client.aclose()
+    categorias = await client.listar_categorias(proyecto)
+    return [categoria.publico() for categoria in categorias]
 
 
 @mcp.tool()
@@ -240,11 +250,8 @@ async def mi_reporte_diario(fecha: str) -> dict:
     ``cerrado`` es true cuando ``status`` es 2 y ese día ya no se puede editar.
     """
     client = await _client()
-    try:
-        reporte = await client.mi_reporte_diario(fecha)
-        return reporte.publico()
-    finally:
-        await client.aclose()
+    reporte = await client.mi_reporte_diario(fecha)
+    return reporte.publico()
 
 
 @mcp.tool()
@@ -269,11 +276,8 @@ async def registrar_tiempo(
             borrador (status 0).
     """
     client = await _client()
-    try:
-        reporte = await client.registrar_tiempo(fecha, lineas, confirmar=confirmar)
-        return reporte.publico()
-    finally:
-        await client.aclose()
+    reporte = await client.registrar_tiempo(fecha, lineas, confirmar=confirmar)
+    return reporte.publico()
 
 
 def _comentario_publico(comentario: Comment) -> dict:

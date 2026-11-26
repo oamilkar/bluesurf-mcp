@@ -15,7 +15,7 @@ def test_cookie_env_wins(monkeypatch: pytest.MonkeyPatch) -> None:
         "bluesurf_mcp.server.load_stored_credentials",
         lambda: ("alice", "from-store"),
     )
-    auth = _build_auth()
+    auth = _build_auth(lambda _u: None)
     assert isinstance(auth, CookieAuth)
 
 
@@ -28,7 +28,7 @@ def test_env_credentials_beat_store(monkeypatch: pytest.MonkeyPatch) -> None:
         "bluesurf_mcp.server.load_stored_credentials",
         lambda: ("alice", "from-store"),
     )
-    auth = _build_auth()
+    auth = _build_auth(lambda _u: None)
     assert isinstance(auth, CredentialsAuth)
     assert auth._username == "alice"
     assert auth._password == "from-env"
@@ -48,10 +48,20 @@ def test_falls_back_to_store(monkeypatch: pytest.MonkeyPatch) -> None:
         "bluesurf_mcp.server.load_stored_credentials",
         lambda: ("bob", "stored-secret"),
     )
-    auth = _build_auth()
+    auth = _build_auth(lambda _u: None)
     assert isinstance(auth, CredentialsAuth)
     assert auth._username == "bob"
     assert auth._password == "stored-secret"
+
+
+def test_env_credentials_load_keyring_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BLUESURF_COOKIE", raising=False)
+    monkeypatch.delenv("SURF_COOKIE", raising=False)
+    monkeypatch.setenv("BLUESURF_USERNAME", "alice")
+    monkeypatch.setenv("BLUESURF_PASSWORD", "secret")
+    auth = _build_auth(lambda u: "cached" if u == "alice" else None)
+    assert isinstance(auth, CredentialsAuth)
+    assert auth._initial_session_cookie == "cached"
 
 
 def test_error_mentions_login_when_nothing_configured(
@@ -71,4 +81,4 @@ def test_error_mentions_login_when_nothing_configured(
         lambda: None,
     )
     with pytest.raises(RuntimeError, match="bluesurf-mcp login"):
-        _build_auth()
+        _build_auth(lambda _u: None)

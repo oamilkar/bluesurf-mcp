@@ -14,7 +14,8 @@ from bluesurf_client import BlueSurfClient, CredentialsAuth
 from bluesurf_client.auth.base import AuthError
 from bluesurf_client.constants import DEFAULT_BASE_URL
 
-from bluesurf_mcp.credentials_store import clear, save
+from bluesurf_client.constants import IDENTITY_COOKIE
+from bluesurf_mcp.credentials_store import clear, save, save_session_cookie
 from bluesurf_mcp.server import _env, main as run_mcp
 
 _HELP = """uso: bluesurf-mcp [login|logout]
@@ -58,11 +59,12 @@ def _cmd_login() -> int:
     base_url = _env("BLUESURF_BASE_URL", "SURF_BASE_URL") or DEFAULT_BASE_URL
     print("Validando contra BlueSurf…")
     try:
-        asyncio.run(_verify_credentials(username, password, base_url))
+        cookie_value = asyncio.run(_verify_credentials(username, password, base_url))
     except AuthError as exc:
         print(f"ERROR: login rechazado: {exc}", file=sys.stderr)
         return 1
 
+    save_session_cookie(username, cookie_value)
     save(username, password)
     print("Credenciales guardadas en el almacén del sistema.")
     print("En mcp.json no hace falta poner usuario ni contraseña.")
@@ -75,10 +77,16 @@ def _cmd_logout() -> int:
     return 0
 
 
-async def _verify_credentials(username: str, password: str, base_url: str) -> None:
-    auth = CredentialsAuth(username, password)
+async def _verify_credentials(username: str, password: str, base_url: str) -> str:
+    auth = CredentialsAuth(username, password, persist_session=False)
     async with BlueSurfClient(base_url=base_url) as client:
         await client.login(auth)
+        cookie = client.session_cookie()
+        if not cookie:
+            raise AuthError(
+                f"El login respondió sin la cookie de sesión '{IDENTITY_COOKIE}'"
+            )
+        return cookie
 
 
 if __name__ == "__main__":

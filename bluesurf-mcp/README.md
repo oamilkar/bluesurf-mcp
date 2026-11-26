@@ -30,13 +30,15 @@ bluesurf-mcp login
 
 Pide usuario y contraseña, valida contra BlueSurf y guarda la contraseña en el
 almacén del sistema (Credential Manager en Windows, Keychain en macOS, Secret
-Service en Linux). El username queda en un JSON local, sin la contraseña.
+Service en Linux). También guarda ahí la **cookie de sesión** (`.AspNetCore.Identity.Application`)
+para no tener que volver a hacer POST a `/api/login` al arrancar el servidor.
+El username queda en un JSON local, sin la contraseña.
 
 ```bash
 bluesurf-mcp logout
 ```
 
-borra lo guardado.
+borra usuario, contraseña y cookie de sesión guardada.
 
 ## Configuración (variables de entorno)
 
@@ -51,7 +53,13 @@ Claves canónicas `BLUESURF_*`; se aceptan `SURF_*` como fallback.
 
 Precedencia: cookie en env → usuario/contraseña en env → `bluesurf-mcp login`.
 
-El núcleo (`bluesurf_client`) no persiste secretos.
+`BLUESURF_COOKIE` / `SURF_COOKIE` **no** se vuelve a guardar en el keyring: solo
+se usa en memoria.
+
+Con credenciales (env o `login`), el adaptador MCP **reutiliza un solo cliente**
+por proceso, carga la cookie cacheada del keyring si existe y hace POST solo
+cuando hace falta (p. ej. primera vez o tras un 401); tras un login exitoso por
+credenciales actualiza la cookie en el keyring.
 
 ## Correr el servidor
 

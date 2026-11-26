@@ -1,13 +1,14 @@
 """Autenticación por credenciales (usuario/contraseña).
 
-El consumidor entrega usuario y contraseña; esta clase hace el POST de login y
-deja la cookie de sesión en el cliente httpx (en memoria). **No** persiste nada
-en disco: ni credenciales ni cookie. Las credenciales se mantienen en memoria
-solo para poder re-loguear si la sesión expira (401) durante la vida de la
-instancia.
+El consumidor entrega usuario y contraseña; esta clase puede inyectar una
+cookie cacheada o hacer el POST de login y dejar la cookie en el cliente httpx.
+Con ``persist_session`` el adaptador MCP escribe la cookie en el keyring del SO
+(después de un POST exitoso); no aplica al flujo ``BLUESURF_COOKIE`` solo.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import httpx
 
@@ -22,14 +23,39 @@ class CredentialsAuth(AuthProvider):
     aunque el valor sea un nombre de usuario). No usa CSRF/anti-forgery.
     """
 
-    def __init__(self, username: str, password: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        *,
+        initial_session_cookie: str | None = None,
+        persist_session: bool = False,
+        persist_cookie: Callable[[str, str], None] | None = None,
+    ) -> None:
         if not username or not password:
             raise ValueError("username y password son obligatorios")
-        # Solo en memoria; nunca se escriben a disco.
         self._username = username
         self._password = password
+        raw = initial_session_cookie
+        self._initial_session_cookie: str | None = (
+            raw.strip() if isinstance(raw, str) and raw.strip() else None
+        )
+        self._persist_session = persist_session
+        self._persist_cookie = persist_cookie
 
     async def apply(self, client: httpx.AsyncClient) -> None:
+        await self._apply(client, prefer_cached=True)
+
+    async def refresh(self, client: httpx.AsyncClient) -> None:
+        await self._apply(client, prefer_cached=False)
+
+    async def _apply(
+        self, client: httpx.AsyncClient, *, prefer_cached: bool
+    ) -> None:
+        if prefer_cached and self._initial_session_cookie is not None:
+            client.cookies.set(IDENTITY_COOKIE, self._initial_session_cookie)
+            return
+
         base = str(client.base_url).rstrip("/")
         try:
             response = await client.post(
@@ -54,6 +80,7 @@ class CredentialsAuth(AuthProvider):
                 f"'{IDENTITY_COOKIE}'"
             )
 
-    async def refresh(self, client: httpx.AsyncClient) -> None:
-        # La cookie expiró: volvemos a loguear con las credenciales en memoria.
-        await self.apply(client)
+        if self._persist_session and self._persist_cookie is not None:
+            value = client.cookies.get(IDENTITY_COOKIE)
+            if value:
+                self._persist_cookie(self._username, str(value))

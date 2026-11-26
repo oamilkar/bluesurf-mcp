@@ -17,6 +17,11 @@ KEYRING_SERVICE = "bluesurf-mcp"
 _CONFIG_FILENAME = "config.json"
 
 
+def session_keyring_username(username: str) -> str:
+    """Cuenta de keyring para la cookie (no colisiona con la contraseña)."""
+    return f"{username}::session"
+
+
 def config_dir() -> Path:
     if os.name == "nt":
         root = os.environ.get("LOCALAPPDATA")
@@ -52,6 +57,45 @@ def load(*, directory: Path | None = None) -> tuple[str, str] | None:
     return username, password
 
 
+def load_session_cookie(
+    username: str, *, directory: Path | None = None
+) -> str | None:
+    """Cookie de sesión en keyring (vía ``login``), o ``None``."""
+    if not username:
+        return None
+    try:
+        return keyring.get_password(
+            KEYRING_SERVICE, session_keyring_username(username)
+        )
+    except KeyringError:
+        return None
+
+
+def save_session_cookie(
+    username: str, cookie_value: str, *, directory: Path | None = None
+) -> None:
+    """Persiste la cookie de identidad (además de usuario/contraseña)."""
+    if not username or not cookie_value:
+        raise ValueError("username y cookie_value son obligatorios")
+    _ = directory  # API alineada con Node; reservado por si hace falta variantes.
+    keyring.set_password(
+        KEYRING_SERVICE, session_keyring_username(username), cookie_value
+    )
+
+
+def clear_session_cookie(
+    username: str, *, directory: Path | None = None
+) -> None:
+    """Quita la cookie guardada para ese usuario (idempotente)."""
+    _ = directory
+    if not username:
+        return
+    try:
+        keyring.delete_password(KEYRING_SERVICE, session_keyring_username(username))
+    except (PasswordDeleteError, KeyringError):
+        pass
+
+
 def save(username: str, password: str, *, directory: Path | None = None) -> None:
     if not username or not password:
         raise ValueError("username y password son obligatorios")
@@ -61,6 +105,7 @@ def save(username: str, password: str, *, directory: Path | None = None) -> None
     previous = _read_username(path)
     if previous and previous != username:
         _delete_password(previous)
+        clear_session_cookie(previous)
 
     directory.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -79,6 +124,7 @@ def clear(*, directory: Path | None = None) -> None:
     username = _read_username(path)
     if username:
         _delete_password(username)
+        clear_session_cookie(username)
     if path.is_file():
         path.unlink()
 

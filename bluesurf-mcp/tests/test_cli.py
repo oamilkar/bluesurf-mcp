@@ -25,18 +25,28 @@ def test_login_saves_after_successful_verify(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     saved: dict[str, str] = {}
+    session_saved: dict[str, str] = {}
 
-    async def ok(username: str, password: str, base_url: str) -> None:
-        return None
+    async def ok(username: str, password: str, base_url: str) -> str:
+        return "cookie-from-verify"
 
     monkeypatch.setattr(cli, "_verify_credentials", ok)
     monkeypatch.setattr(
         cli, "save", lambda u, p: saved.update(username=u, password=p)
     )
+    monkeypatch.setattr(
+        cli,
+        "save_session_cookie",
+        lambda u, c: session_saved.update(username=u, cookie=c),
+    )
     monkeypatch.setattr("builtins.input", lambda _: "alice")
     monkeypatch.setattr(cli.getpass, "getpass", lambda _: "pw")
     assert cli._cmd_login() == 0
     assert saved == {"username": "alice", "password": "pw"}
+    assert session_saved == {
+        "username": "alice",
+        "cookie": "cookie-from-verify",
+    }
 
 
 def test_login_does_not_save_when_surf_rejects(

@@ -6,6 +6,7 @@ import pytest
 from keyring.errors import PasswordDeleteError
 
 from bluesurf_mcp import credentials_store as store
+from bluesurf_mcp.credentials_store import session_keyring_username
 
 
 class MemoryKeyring:
@@ -59,16 +60,25 @@ def test_save_replaces_previous_username(
     tmp_path, keyring_mem: MemoryKeyring
 ) -> None:
     store.save("alice", "old", directory=tmp_path)
+    store.save_session_cookie("alice", "cookie-a", directory=tmp_path)
     store.save("bob", "new", directory=tmp_path)
     assert store.load(directory=tmp_path) == ("bob", "new")
     assert keyring_mem.get_password(store.KEYRING_SERVICE, "alice") is None
+    assert (
+        keyring_mem.get_password(
+            store.KEYRING_SERVICE, session_keyring_username("alice")
+        )
+        is None
+    )
     assert keyring_mem.get_password(store.KEYRING_SERVICE, "bob") == "new"
 
 
 def test_clear_is_idempotent(tmp_path, keyring_mem: MemoryKeyring) -> None:
     store.save("alice", "s3cret", directory=tmp_path)
+    store.save_session_cookie("alice", "sess", directory=tmp_path)
     store.clear(directory=tmp_path)
     assert store.load(directory=tmp_path) is None
+    assert store.load_session_cookie("alice", directory=tmp_path) is None
     assert not (tmp_path / "config.json").exists()
     store.clear(directory=tmp_path)
     assert store.load(directory=tmp_path) is None
